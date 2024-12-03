@@ -19,6 +19,10 @@ int customDisplayState = 0;   // Current state in the custom display cycle
 int updatedcustomDisplayState = 0;
 int lastlevel;
 
+// Variables for debounce
+const unsigned long debounceDelay = 50; // Debounce delay in milliseconds
+unsigned long lastDebounceTime = 0;     // Last time the button was debounced
+
 void setup() {
   // Set up the LED pins as outputs
   pinMode(greenLED, OUTPUT);
@@ -29,29 +33,41 @@ void setup() {
   pinMode(buttonPin, INPUT_PULLUP);
 
   // Start serial communication for debugging
-  Serial.begin(115200);
+  Serial.begin(9600);
 }
 
 void loop() {
-  // Read button state
-  buttonState = digitalRead(buttonPin);
+  // Read the current state of the button
+  int reading = digitalRead(buttonPin);
 
-  // Check for button press
-  if (buttonState == LOW && lastButtonState == HIGH) {
-    // Button was pressed, change custom display state
-    if(!isCustomDisplay)
-    {
-    customDisplayState = -1;
-    updateCustomDisplay();
-    delay(200);
-    }
-    customDisplayState = (updatedcustomDisplayState + 1) % 3; // Cycle through 0, 1, 2
-    updatedcustomDisplayState = customDisplayState;
-    isCustomDisplay = true;
-    displayStartTime = millis(); // Record the time custom mode starts
-    updateCustomDisplay();
+  // Debounce logic
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis(); // Reset the debounce timer
   }
-  lastButtonState = buttonState;
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    // If the button state has stabilized
+    if (reading != buttonState) {
+      buttonState = reading;
+
+      // Check for a button press
+      if (buttonState == LOW) {
+        // Button was pressed, change custom display state
+        if (!isCustomDisplay) {
+          customDisplayState = -1;
+          updateCustomDisplay();
+          delay(200);
+        }
+        customDisplayState = (updatedcustomDisplayState + 1) % 3; // Cycle through 0, 1, 2
+        updatedcustomDisplayState = customDisplayState;
+        isCustomDisplay = true;
+        displayStartTime = millis(); // Record the time custom mode starts
+        updateCustomDisplay();
+      }
+    }
+  }
+
+  lastButtonState = reading; // Save the current reading as the last state
 
   // If in custom display mode and 3 seconds have passed, return to moisture display
   if (isCustomDisplay && millis() - displayStartTime > 3000) {
@@ -75,11 +91,9 @@ void updateCustomDisplay() {
   digitalWrite(redLED, LOW);
 
   // Turn on the corresponding LED for the current state
-  if(customDisplayState == -1)
-  {
+  if (customDisplayState == -1) {
 
-  }
-  else if (customDisplayState == 0) {
+  } else if (customDisplayState == 0) {
     digitalWrite(redLED, HIGH); // Red
   } else if (customDisplayState == 1) {
     digitalWrite(yellowLED, HIGH); // Yellow
@@ -92,18 +106,17 @@ void updateCustomDisplay() {
 void showMoistureStatus() {
   // Read moisture sensor value
   int sensorValue = analogRead(sensorPin);
-  
+
   // Map sensor value to percentage (0% = air, 100% = wet)
   int moisturePercent = map(sensorValue, maxMoisture, minMoisture, 0, 100);
   moisturePercent = constrain(moisturePercent, 0, 100); // Ensure percentage is within bounds
-  if(moisturePercent != lastlevel)
-  { 
-   lastlevel = moisturePercent;
-   // Debugging output
-   Serial.print("Moisture Level: ");
-   Serial.print(moisturePercent);
-   Serial.println("%");
-   Serial.println(lastlevel);
+  if (moisturePercent != lastlevel) {
+    lastlevel = moisturePercent;
+    // Debugging output
+    Serial.print("Moisture Level: ");
+    Serial.print(moisturePercent);
+    Serial.println("%");
+    Serial.println(lastlevel);
   }
   // Determine LED status
   if (moisturePercent > 70) {
