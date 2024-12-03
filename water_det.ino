@@ -1,3 +1,6 @@
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+
 // Pin Definitions
 const int sensorPin = A0;    // Analog pin connected to the moisture sensor
 const int greenLED = D2;     // Green LED pin
@@ -10,89 +13,74 @@ const int maxMoisture = 1024; // Air is completely dry
 const int minMoisture = 300;  // Sensor in water (calibrate this if necessary)
 
 // Variables for button press and state
-int buttonState = 0;         // Current button state
-int lastButtonState = 0;     // Previous button state
-unsigned long lastPressTime = 0; // Time of the last button press
-unsigned long displayStartTime = 0; // Time display mode started
-bool isCustomDisplay = false; // Flag for custom display mode
-int customDisplayState = 0;   // Current state in the custom display cycle
+int buttonState = 0;
+int lastButtonState = 0;
+unsigned long lastPressTime = 0;
+unsigned long displayStartTime = 0;
+bool isCustomDisplay = false;
+int customDisplayState = 0;
 int updatedcustomDisplayState = 0;
-int lastlevel;
+int lastlevel = -1;
 
 // Variables for debounce
-const unsigned long debounceDelay = 50; // Debounce delay in milliseconds
-unsigned long lastDebounceTime = 0;     // Last time the button was debounced
+const unsigned long debounceDelay = 50;
+unsigned long lastDebounceTime = 0;
 
-void setup() {
-  // Set up the LED pins as outputs
-  pinMode(greenLED, OUTPUT);
-  pinMode(yellowLED, OUTPUT);
-  pinMode(redLED, OUTPUT);
+// WiFi credentials
+const char* ssid = "Hotsiepotsie";
+const char* password = "FAN1234Y";
 
-  // Set up the button pin as input with pullup resistor
-  pinMode(buttonPin, INPUT_PULLUP);
+// Web server
+ESP8266WebServer server(80);
 
-  // Start serial communication for debugging
-  Serial.begin(9600);
+// Function to handle the root page
+void handleRoot() {
+  server.send(200, "text/plain", "Hello from ESP8266!");
 }
 
-void loop() {
-  // Read the current state of the button
-  int reading = digitalRead(buttonPin);
+// Function to handle LED control via web server
+void handleControl() {
+  if (server.hasArg("led")) {
+    String led = server.arg("led");
 
-  // Debounce logic
-  if (reading != lastButtonState) {
-    lastDebounceTime = millis(); // Reset the debounce timer
-  }
-
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    // If the button state has stabilized
-    if (reading != buttonState) {
-      buttonState = reading;
-
-      // Check for a button press
-      if (buttonState == LOW) {
-        // Button was pressed, change custom display state
-        if (!isCustomDisplay) {
-          customDisplayState = -1;
-          updateCustomDisplay();
-          delay(200);
-        }
-        customDisplayState = (updatedcustomDisplayState + 1) % 3; // Cycle through 0, 1, 2
-        updatedcustomDisplayState = customDisplayState;
-        isCustomDisplay = true;
-        displayStartTime = millis(); // Record the time custom mode starts
-        updateCustomDisplay();
-      }
+    if (led == "green") {
+      digitalWrite(greenLED, HIGH);
+      digitalWrite(yellowLED, LOW);
+      digitalWrite(redLED, LOW);
+    } else if (led == "yellow") {
+      digitalWrite(greenLED, LOW);
+      digitalWrite(yellowLED, HIGH);
+      digitalWrite(redLED, LOW);
+    } else if (led == "red") {
+      digitalWrite(greenLED, LOW);
+      digitalWrite(yellowLED, LOW);
+      digitalWrite(redLED, HIGH);
+    } else if (led == "off") {
+      digitalWrite(greenLED, LOW);
+      digitalWrite(yellowLED, LOW);
+      digitalWrite(redLED, LOW);
+    } else if (led == "on") {
+      digitalWrite(greenLED, HIGH);
+      digitalWrite(yellowLED, HIGH);
+      digitalWrite(redLED, HIGH);
+    } else {
+      server.send(400, "text/plain", "Invalid LED command");
+      return;
     }
-  }
-
-  lastButtonState = reading; // Save the current reading as the last state
-
-  // If in custom display mode and 3 seconds have passed, return to moisture display
-  if (isCustomDisplay && millis() - displayStartTime > 3000) {
-    customDisplayState = -1;
-    updateCustomDisplay();
-    delay(200);
-    isCustomDisplay = false; // Exit custom display mode
-  }
-
-  // Show moisture level if not in custom display mode
-  if (!isCustomDisplay) {
-    showMoistureStatus();
+    server.send(200, "text/plain", "LED state updated");
+  } else {
+    server.send(400, "text/plain", "Missing LED parameter");
   }
 }
 
 // Function to update the LEDs based on custom display state
 void updateCustomDisplay() {
-  // Turn off all LEDs
   digitalWrite(greenLED, LOW);
   digitalWrite(yellowLED, LOW);
   digitalWrite(redLED, LOW);
 
-  // Turn on the corresponding LED for the current state
   if (customDisplayState == -1) {
-
+    // Do nothing
   } else if (customDisplayState == 0) {
     digitalWrite(redLED, HIGH); // Red
   } else if (customDisplayState == 1) {
@@ -104,35 +92,89 @@ void updateCustomDisplay() {
 
 // Function to display moisture status
 void showMoistureStatus() {
-  // Read moisture sensor value
   int sensorValue = analogRead(sensorPin);
-
-  // Map sensor value to percentage (0% = air, 100% = wet)
   int moisturePercent = map(sensorValue, maxMoisture, minMoisture, 0, 100);
-  moisturePercent = constrain(moisturePercent, 0, 100); // Ensure percentage is within bounds
+  moisturePercent = constrain(moisturePercent, 0, 100);
+
   if (moisturePercent != lastlevel) {
     lastlevel = moisturePercent;
-    // Debugging output
     Serial.print("Moisture Level: ");
     Serial.print(moisturePercent);
     Serial.println("%");
-    Serial.println(lastlevel);
   }
-  // Determine LED status
+
   if (moisturePercent > 70) {
-    // Green: Moisture level is good
     digitalWrite(greenLED, HIGH);
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, LOW);
   } else if (moisturePercent > 40) {
-    // Yellow: Moisture is getting low
     digitalWrite(greenLED, LOW);
     digitalWrite(yellowLED, HIGH);
     digitalWrite(redLED, LOW);
   } else {
-    // Red: Too dry, needs water
     digitalWrite(greenLED, LOW);
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, HIGH);
+  }
+}
+
+void setup() {
+  Serial.println("yeah.");
+  Serial.begin(9600);
+
+  pinMode(greenLED, OUTPUT);
+  pinMode(yellowLED, OUTPUT);
+  pinMode(redLED, OUTPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nConnected! IP: " + WiFi.localIP().toString());
+
+  server.on("/", handleRoot);
+  server.on("/control", handleControl);
+  server.begin();
+  Serial.println("Server started.");
+}
+
+void loop() {
+  server.handleClient();
+
+  int reading = digitalRead(buttonPin);
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis();
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != buttonState) {
+      buttonState = reading;
+      if (buttonState == LOW) {
+        if (!isCustomDisplay) {
+          customDisplayState = -1;
+          updateCustomDisplay();
+          delay(200);
+        }
+        customDisplayState = (updatedcustomDisplayState + 1) % 3;
+        updatedcustomDisplayState = customDisplayState;
+        isCustomDisplay = true;
+        displayStartTime = millis();
+        updateCustomDisplay();
+      }
+    }
+  }
+
+  lastButtonState = reading;
+
+  if (isCustomDisplay && millis() - displayStartTime > 3000) {
+    customDisplayState = -1;
+    updateCustomDisplay();
+    isCustomDisplay = false;
+  }
+
+  if (!isCustomDisplay) {
+    showMoistureStatus();
   }
 }
