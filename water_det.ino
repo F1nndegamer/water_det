@@ -1,28 +1,26 @@
 #include <ESP8266WiFi.h>
 
 // WiFi credentials
-const char* ssid = "Hotsiepotsie";
-const char* password = "FAN1234Y";
+const char* ssid = "TMNL-8F0095"; // Replace with your WiFi SSID
+const char* password = "WMFF9F9VCG45BJMJ"; // Replace with your WiFi Password
 
 // Web server
 WiFiServer server(80);
 
 // Pin Definitions
 const int sensorPin = A0;    // Analog pin connected to the moisture sensor
-const int buttonPin = D3;    // Button pin
 const int greenLED = D2;     // Green LED pin
 const int yellowLED = D1;    // Yellow LED pin
 const int redLED = D0;       // Red LED pin
 
 // Moisture level thresholds
 const int maxMoisture = 1024; // Air is completely dry
-const int minMoisture = 300;  // Sensor in water (calibrate this if necessary)
+const int minMoisture = 300;  // Sensor in water (calibrate this as needed)
 
-// Variables for button press and debounce
-int buttonState = 0;         // Current button state
-int lastButtonState = 0;     // Previous button state
-unsigned long lastDebounceTime = 0; // Last time the button was debounced
-const unsigned long debounceDelay = 50; // Debounce delay in milliseconds
+// Variables for sensor reading
+unsigned long lastSensorReadTime = 0;
+const unsigned long sensorReadInterval = 1000; // Read sensor every 1 second
+int cachedSensorValue = 0;
 
 void setup() {
   // Start serial communication for debugging
@@ -32,9 +30,6 @@ void setup() {
   pinMode(greenLED, OUTPUT);
   pinMode(yellowLED, OUTPUT);
   pinMode(redLED, OUTPUT);
-
-  // Set up the button pin as input with pullup resistor
-  pinMode(buttonPin, INPUT_PULLUP);
 
   // Connect to WiFi
   WiFi.begin(ssid, password);
@@ -51,51 +46,93 @@ void setup() {
 }
 
 void loop() {
-  // Read the current state of the button
-  int reading = digitalRead(buttonPin);
-
-  // Debounce logic
-  if (reading != lastButtonState) {
-    lastDebounceTime = millis(); // Reset the debounce timer
+  // Periodically read sensor value
+  if (millis() - lastSensorReadTime >= sensorReadInterval) {
+    lastSensorReadTime = millis();
+    cachedSensorValue = analogRead(sensorPin);
   }
-
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    // If the button state has stabilized
-    if (reading != buttonState) {
-      buttonState = reading;
-
-      // Check for a button press
-      if (buttonState == LOW) {
-        Serial.println("Button Pressed!");
-        // Add custom behavior for the button press here (e.g., toggle mode, change display)
-      }
-    }
-  }
-
-  lastButtonState = reading; // Save the current reading as the last state
 
   // Handle HTTP requests
   WiFiClient client = server.available();
   if (client) {
     Serial.println("Client connected.");
-    // HTTP response
+    handleRequest(client);
+    client.stop();
+    Serial.println("Client disconnected.");
+  }
+
+  // Update LED status based on moisture level
+  updateLEDs();
+}
+
+void updateLEDs() {
+  int moisturePercent = map(cachedSensorValue, maxMoisture, minMoisture, 0, 100);
+  moisturePercent = constrain(moisturePercent, 0, 100);
+
+  if (moisturePercent > 70) {
+    // Green: Moisture level is good
+    digitalWrite(greenLED, HIGH);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, LOW);
+  } else if (moisturePercent > 40) {
+    // Yellow: Moisture is getting low
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, HIGH);
+    digitalWrite(redLED, LOW);
+  } else {
+    // Red: Too dry, needs water
+    digitalWrite(greenLED, LOW);
+    digitalWrite(yellowLED, LOW);
+    digitalWrite(redLED, HIGH);
+  }
+}
+
+void handleRequest(WiFiClient client) {
+  String request = client.readStringUntil('\r');
+  client.flush();
+
+  // Handle LED control requests
+  if (request.indexOf("/setLED") != -1) {
+    if (request.indexOf("?green=on") != -1) digitalWrite(greenLED, HIGH);
+    else if (request.indexOf("?green=off") != -1) digitalWrite(greenLED, LOW);
+    else if (request.indexOf("?yellow=on") != -1) digitalWrite(yellowLED, HIGH);
+    else if (request.indexOf("?yellow=off") != -1) digitalWrite(yellowLED, LOW);
+    else if (request.indexOf("?red=on") != -1) digitalWrite(redLED, HIGH);
+    else if (request.indexOf("?red=off") != -1) digitalWrite(redLED, LOW);
+
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: text/html");
     client.println("Connection: close");
     client.println();
-    client.println("<!DOCTYPE HTML>");
-    client.println("<html>");
-    client.println("<h1>Moisture Level</h1>");
+    client.println("<p>LED Updated</p>");
+    return;
+  }
 
-    // Calculate and display moisture level
-    int sensorValue = analogRead(sensorPin);
-    int moisturePercent = map(sensorValue, maxMoisture, minMoisture, 0, 100);
+  // Handle status requests
+  if (request.indexOf("/getStatus") != -1) {
+    int moisturePercent = map(cachedSensorValue, maxMoisture, minMoisture, 0, 100);
     moisturePercent = constrain(moisturePercent, 0, 100);
 
-    client.println("<p>Moisture Level: " + String(moisturePercent) + "%</p>");
-    client.println("</html>");
-    delay(1);
-    client.stop();
-    Serial.println("Client disconnected.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"moisture\":");
+    client.print(moisturePercent);
+    client.print(",\"green\":");
+    client.print(digitalRead(greenLED));
+    client.print(",\"yellow\":");
+    client.print(digitalRead(yellowLED));
+    client.print(",\"red\":");
+    client.print(digitalRead(redLED));
+    client.println("}");
+    return;
   }
+
+  // Default response
+  client.println("HTTP/1.1 404 Not Found");
+  client.println("Content-Type: text/html");
+  client.println("Connection: close");
+  client.println();
+  client.println("<p>Invalid Request</p>");
 }
