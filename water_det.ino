@@ -13,8 +13,9 @@ const int buttonPin = D3;    // Button pin
 
 // Moisture level thresholds
 const int maxMoisture = 1024; // Air is completely dry
-const int minMoisture = 430;  // Sensor in water (calibrate this if necessary)
-
+const int minMoisture = 340;  // Sensor in water (calibrate this if nece
+const int Greenrequired = 70;
+const int Yellowreq = 40;
 // Initialize the web server
 ESP8266WebServer server(80);
 
@@ -56,11 +57,11 @@ void handleMoistureRequest() {
   moisturePercent = constrain(moisturePercent, 0, 100); // Ensure it's between 0 and 100
 
   // Determine LED status based on moisture level
-  if (moisturePercent > 70) {
+  if (moisturePercent > Greenrequired) {
     digitalWrite(greenLED, HIGH);
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, LOW);
-  } else if (moisturePercent > 40) {
+  } else if (moisturePercent > Yellowreq) {
     digitalWrite(greenLED, LOW);
     digitalWrite(yellowLED, HIGH);
     digitalWrite(redLED, LOW);
@@ -69,7 +70,6 @@ void handleMoistureRequest() {
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, HIGH);
   }
-
   // Send moisture and LED status as JSON response
   String response = "{\"moisture\":" + String(moisturePercent) + ",\"ledStatus\":\"";
   if (moisturePercent > 70) {
