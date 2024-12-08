@@ -40,13 +40,12 @@ void setup() {
   // Define web server routes
   server.on("/getMoisture", HTTP_GET, handleMoistureRequest);
   server.begin();
+  Serial.println(WiFi.localIP());
 }
 
 void loop() {
   // Handle incoming client requests
   server.handleClient();
-  
-   handleMoistureRequest();
    int moisture = MoisturePercent();
   if (moisture > Greenrequired) {
     digitalWrite(greenLED, HIGH);
