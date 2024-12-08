@@ -45,23 +45,14 @@ void setup() {
 void loop() {
   // Handle incoming client requests
   server.handleClient();
-}
-
-void handleMoistureRequest() {
-
-  int moistureValue = analogRead(sensorPin);
-
-  Serial.println(moistureValue);
-  // Map moisture level to percentage
-  int moisturePercent = map(moistureValue, maxMoisture, minMoisture, 0, 100);
-  moisturePercent = constrain(moisturePercent, 0, 100); // Ensure it's between 0 and 100
-
-  // Determine LED status based on moisture level
-  if (moisturePercent > Greenrequired) {
+  
+   handleMoistureRequest();
+   int moisture = MoisturePercent();
+  if (moisture > Greenrequired) {
     digitalWrite(greenLED, HIGH);
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, LOW);
-  } else if (moisturePercent > Yellowreq) {
+  } else if (moisture > Yellowreq) {
     digitalWrite(greenLED, LOW);
     digitalWrite(yellowLED, HIGH);
     digitalWrite(redLED, LOW);
@@ -70,11 +61,23 @@ void handleMoistureRequest() {
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, HIGH);
   }
+}
+int MoisturePercent()
+{
+  int moistureValue = analogRead(sensorPin);
+
+  // Map moisture level to percentage
+  int moisturePercent = map(moistureValue, maxMoisture, minMoisture, 0, 100);
+  moisturePercent = constrain(moisturePercent, 0, 100); // Ensure it's between 0 and 100
+  return(moisturePercent);
+}
+void handleMoistureRequest() {
+  int moisture = MoisturePercent();
   // Send moisture and LED status as JSON response
-  String response = "{\"moisture\":" + String(moisturePercent) + ",\"ledStatus\":\"";
-  if (moisturePercent > 70) {
+  String response = "{\"moisture\":" + String(moisture) + ",\"ledStatus\":\"";
+  if (moisture > 70) {
     response += "green";
-  } else if (moisturePercent > 40) {
+  } else if (moisture > 40) {
     response += "yellow";
   } else {
     response += "red";
