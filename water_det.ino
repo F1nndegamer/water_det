@@ -11,13 +11,27 @@ const int yellowLED = D1;    // Yellow LED pin
 const int redLED = D0;       // Red LED pin
 const int buttonPin = D3;    // Button pin
 
-// Moisture level thresholds
-const int maxMoisture = 1024; // Air is completely dry
-const int minMoisture = 340;  // Sensor in water (calibrate this if nece
-const int Greenrequired = 70;
-const int Yellowreq = 40;
+// Moisture thresholds for presets
+struct Preset {
+  int Greenrequired;
+  int Yellowreq;
+};
+
+Preset presets[3] = {
+  {70, 40},  // Preset 1
+  {80, 50},  // Preset 2
+  {60, 30}   // Preset 3
+};
+
+int currentPreset = 0; // Index of the current preset
+
 // Initialize the web server
 ESP8266WebServer server(80);
+
+// Global variables
+int lastMoisture = 0;          // Last moisture level
+unsigned long lastReadTime = 0; // Last time the sensor was read
+const unsigned long readInterval = 500; // Interval between reads (ms)
 
 void setup() {
   // Set up the LED pins as outputs
@@ -35,23 +49,57 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("Connected to WiFi");
+  Serial.println("\nConnected to WiFi");
+  Serial.println(WiFi.localIP()); // Print the ESP8266's IP address
 
   // Define web server routes
   server.on("/getMoisture", HTTP_GET, handleMoistureRequest);
+  server.on("/setPreset", HTTP_GET, handleSetPreset);
+  server.on("/updatePreset", HTTP_POST, handleUpdatePreset);
+
   server.begin();
-  Serial.println(WiFi.localIP());
 }
 
 void loop() {
   // Handle incoming client requests
   server.handleClient();
-   int moisture = MoisturePercent();
-  if (moisture > Greenrequired) {
+
+  // Read sensor only at specified intervals
+  unsigned long currentTime = millis();
+  if (currentTime - lastReadTime > readInterval) {
+    lastReadTime = currentTime;
+    lastMoisture = MoisturePercent(); // Update the global moisture level
+
+    // Update LED states based on the current preset
+    updateLEDs();
+  }
+
+  // Handle button press for preset switching
+  static bool buttonPressed = false;
+  if (digitalRead(buttonPin) == LOW && !buttonPressed) {
+    buttonPressed = true;
+    switchPreset();
+  } else if (digitalRead(buttonPin) == HIGH) {
+    buttonPressed = false;
+  }
+}
+
+int MoisturePercent() {
+  int moistureValue = analogRead(sensorPin);
+
+  // Map moisture level to percentage
+  int moisturePercent = map(moistureValue, 1024, 340, 0, 100);
+  moisturePercent = constrain(moisturePercent, 0, 100); // Ensure it's between 0 and 100
+  return moisturePercent;
+}
+
+void updateLEDs() {
+  Preset current = presets[currentPreset];
+  if (lastMoisture > current.Greenrequired) {
     digitalWrite(greenLED, HIGH);
     digitalWrite(yellowLED, LOW);
     digitalWrite(redLED, LOW);
-  } else if (moisture > Yellowreq) {
+  } else if (lastMoisture > current.Yellowreq) {
     digitalWrite(greenLED, LOW);
     digitalWrite(yellowLED, HIGH);
     digitalWrite(redLED, LOW);
@@ -61,27 +109,56 @@ void loop() {
     digitalWrite(redLED, HIGH);
   }
 }
-int MoisturePercent()
-{
-  int moistureValue = analogRead(sensorPin);
 
-  // Map moisture level to percentage
-  int moisturePercent = map(moistureValue, maxMoisture, minMoisture, 0, 100);
-  moisturePercent = constrain(moisturePercent, 0, 100); // Ensure it's between 0 and 100
-  return(moisturePercent);
-}
 void handleMoistureRequest() {
-  int moisture = MoisturePercent();
-  // Send moisture and LED status as JSON response
-  String response = "{\"moisture\":" + String(moisture) + ",\"ledStatus\":\"";
-  if (moisture > 70) {
+  Preset current = presets[currentPreset];
+  String response = "{\"moisture\":" + String(lastMoisture) + 
+                    ",\"ledStatus\":\"";
+  if (lastMoisture > current.Greenrequired) {
     response += "green";
-  } else if (moisture > 40) {
+  } else if (lastMoisture > current.Yellowreq) {
     response += "yellow";
   } else {
     response += "red";
   }
-  response += "\"}";
-  
+  response += "\",\"preset\":" + String(currentPreset + 1);
+  responce += current.Greenrequired;
+  responce += current.Yellowreq;
   server.send(200, "application/json", response);
+}
+
+void handleSetPreset() {
+  if (server.hasArg("preset")) {
+    int preset = server.arg("preset").toInt() - 1;
+    if (preset >= 0 && preset < 3) {
+      currentPreset = preset;
+      server.send(200, "text/plain", "Preset switched to " + String(preset + 1));
+    } else {
+      server.send(400, "text/plain", "Invalid preset number");
+    }
+  } else {
+    server.send(400, "text/plain", "Preset parameter is missing");
+  }
+}
+
+void handleUpdatePreset() {
+  if (server.hasArg("preset") && server.hasArg("green") && server.hasArg("yellow")) {
+    int preset = server.arg("preset").toInt() - 1;
+    int green = server.arg("green").toInt();
+    int yellow = server.arg("yellow").toInt();
+    if (preset >= 0 && preset < 3 && green > yellow) {
+      presets[preset].Greenrequired = green;
+      presets[preset].Yellowreq = yellow;
+      server.send(200, "text/plain", "Preset updated successfully");
+    } else {
+      server.send(400, "text/plain", "Invalid parameters");
+    }
+  } else {
+    server.send(400, "text/plain", "Missing parameters");
+  }
+}
+
+void switchPreset() {
+  currentPreset = (currentPreset + 1) % 3; // Cycle through presets
+  Serial.println("Switched to preset " + String(currentPreset + 1));
 }
