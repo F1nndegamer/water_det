@@ -31,7 +31,7 @@ ESP8266WebServer server(80);
 // Global variables
 int lastMoisture = 0;          // Last moisture level
 unsigned long lastReadTime = 0; // Last time the sensor was read
-const unsigned long readInterval = 500; // Interval between reads (ms)
+const unsigned long readInterval = 200; // Interval between reads (ms)
 
 void setup() {
   // Set up the LED pins as outputs
@@ -121,11 +121,12 @@ void handleMoistureRequest() {
   } else {
     response += "red";
   }
-  response += "\",\"preset\":" + String(currentPreset + 1);
-  responce += current.Greenrequired;
-  responce += current.Yellowreq;
+  response += "\",\"preset\":" + String(currentPreset + 1) + 
+              ",\"Greenrequired\":" + String(current.Greenrequired) + 
+              ",\"Yellowreq\":" + String(current.Yellowreq) + "}";
   server.send(200, "application/json", response);
 }
+
 
 void handleSetPreset() {
   if (server.hasArg("preset")) {
